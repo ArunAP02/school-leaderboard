@@ -1,1 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>House Points Leaderboard - Smiling International School</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load Inter Font and Font Awesome for icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f7f9fb;
+            min-height: 100vh;
+        }
+        .house-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease;
+        }
+        .house-card:hover {
+            transform: translateY(-5px) scale(1.02);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        /* Custom animation for score updates */
+        @keyframes flash-green {
+            0% { background-color: transparent; }
+            50% { background-color: #d1fae5; } /* Green-100 */
+            100% { background-color: transparent; }
+        }
+        .score-updated {
+            animation: flash-green 0.6s ease-out;
+        }
+        /* Styles for House Colors */
+        .color-acrobats { background-color: #38a169; } /* Green */
+        .color-bravehearts { background-color: #dd6b20; } /* Orange */
+        .color-druids { background-color: #4299e1; } /* Blue */
+        .color-quicksilver { background-color: #e53e3e; } /* Red */
+        .text-acrobats { color: #38a169; }
+        .text-bravehearts { color: #dd6b20; }
+        .text-druids { color: #4299e1; }
+        .text-quicksilver { color: #e53e3e; }
 
+        /* Admin Panel specific styles */
+        #admin-panel {
+            min-height: 400px;
+        }
+
+        /* Responsive Grid for cards */
+        @media (min-width: 640px) {
+            .house-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+        @media (min-width: 1024px) {
+            .house-grid {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+            }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center p-4 sm:p-8">
+
+    <!-- Header Section -->
+    <header class="w-full max-w-5xl mb-10 bg-white p-4 rounded-xl shadow-lg flex items-center justify-between flex-wrap">
+        <div class="flex items-center">
+            <!-- School Logo is updated to use the /images path -->
+            <img src="./images/Smiling_Positivo_Colori_Verticale_RGB.jpg" onerror="this.onerror=null;this.src='https://placehold.co/150x50/1a202c/ffffff?text=School+Logo';" alt="School Logo" class="h-10 sm:h-12 mr-4">
+            <h1 class="text-3xl sm:text-4xl font-extrabold text-gray-800">
+                House Points Leaderboard
+            </h1>
+        </div>
+        <button id="toggle-admin-btn" class="mt-2 sm:mt-0 px-4 py-2 text-sm bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150">
+            Admin Login
+        </button>
+    </header>
+
+    <!-- Main Content Area / Student View -->
+    <main id="student-view" class="w-full max-w-5xl mb-10">
+        <div id="loading-indicator" class="text-center py-16 text-gray-500 text-xl font-semibold">
+            <i class="fas fa-spinner fa-spin mr-2"></i> Loading live scores...
+        </div>
+        <div id="points-display" class="house-grid grid gap-6">
+            <!-- House Cards will be rendered here -->
+        </div>
+    </main>
+
+    <!-- Admin Panel (Hidden by default) -->
+    <div id="admin-panel" class="hidden w-full max-w-xl bg-white rounded-xl shadow-2xl p-6 sm:p-8 border-4 border-indigo-200">
+        <h2 class="text-2xl font-bold text-indigo-700 mb-6">Administrator Panel</h2>
+
+        <!-- Admin Login Form -->
+        <form id="admin-login-form" class="space-y-4">
+            <label class="block">
+                <span class="text-gray-700">Password:</span>
+                <input type="password" id="admin-password" class="mt-1 block w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+            </label>
+            <button type="submit" class="w-full px-4 py-2 bg-indigo-600 text-white font-semibold rounded-lg hover:bg-indigo-700 transition duration-150">
+                Log In
+            </button>
+            <p id="login-error" class="text-red-500 text-sm hidden"></p>
+        </form>
+
+        <!-- Admin Update Form (Shown after successful login) -->
+        <div id="admin-update-area" class="hidden">
+            <p class="text-green-600 font-semibold mb-4">Welcome, Admin! Update scores below.</p>
+            <form id="update-scores-form" class="space-y-4">
+                <!-- Inputs for each house generated here -->
+            </form>
+            <button id="logout-btn" class="mt-6 w-full px-4 py-2 bg-gray-500 text-white font-semibold rounded-lg hover:bg-gray-600 transition duration-150">
+                Log Out
+            </button>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserLocalPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Enable Firestore Debug Logging
+        setLogLevel('debug');
+
+        // --- CONFIGURATION ---
+        const ADMIN_PASSWORD = "changeThisPassword123"; // !!! ADMIN: CHANGE THIS PASSWORD !!!
+        const HOUSE_DATA = {
+            // UPDATED IMAGE URLs TO USE RELATIVE PATHS FOR GITHUB
+            'Acrobats': { color: '#38a169', imageUrl: './images/ACROBATS.png', placeholderColor: '38a169' },
+            'Bravehearts': { color: '#dd6b20', imageUrl: './images/BRAVEHEARTS.png', placeholderColor: 'dd6b20' },
+            'Druids': { color: '#4299e1', imageUrl: './images/DRUIDS.png', placeholderColor: '4299e1' },
+            'Quicksilver': { color: '#e53e3e', imageUrl: './images/QUICKSILVER.png', placeholderColor: 'e53e3e' }
+        };
+
+        // --- FIREBASE SETUP & GLOBAL STATE ---
+        let db;
+        let auth;
+        let userId = null;
+        let houseScoresRef; // Reference to the single document holding all scores
+        let currentScores = {}; // Holds the current scores for local sorting
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- DOM ELEMENTS ---
+        const studentView = document.getElementById('student-view');
+        const pointsDisplay = document.getElementById('points-display');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const adminPanel = document.getElementById('admin-panel');
+        const toggleAdminBtn = document.getElementById('toggle-admin-btn');
+        const adminLoginForm = document.getElementById('admin-login-form');
+        const adminPasswordInput = document.getElementById('admin-password');
+        const loginError = document.getElementById('login-error');
+        const adminUpdateArea = document.getElementById('admin-update-area');
+        const updateScoresForm = document.getElementById('update-scores-form');
+        const logoutBtn = document.getElementById('logout-btn');
+
+
+        /**
+         * Initializes Firebase and authenticates the user.
+         * The admin panel and score update logic will run regardless of the specific user,
+         * as the data is 'public' for the app. We use a dedicated document for global data.
+         */
+        async function initializeAndAuthenticate() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // Set persistence for long-lived session
+                await setPersistence(auth, browserLocalPersistence);
+
+                onAuthStateChanged(auth, async (user) => {
+                    if (!user) {
+                        // Sign in anonymously to get a userId and read/write permissions
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    }
+
+                    // Once auth is ready, set the global data reference (public data path)
+                    houseScoresRef = doc(db, `artifacts/${appId}/public/data/scores/leaderboard`);
+
+                    // Start the real-time listener for the student view
+                    startRealTimeListener();
+                });
+            } catch (error) {
+                console.error("Firebase Initialization or Auth Error:", error);
+                loadingIndicator.textContent = "Error loading data. Check console for details.";
+            }
+        }
+
+        /**
+         * Attaches the real-time listener to the scores document.
+         */
+        function startRealTimeListener() {
+            onSnapshot(houseScoresRef, (docSnapshot) => {
+                loadingIndicator.classList.add('hidden');
+                
+                if (docSnapshot.exists()) {
+                    const data = docSnapshot.data();
+                    currentScores = data;
+                    renderLeaderboard(data);
+                    renderAdminInputs(data);
+                } else {
+                    // Initialize document if it doesn't exist (first run)
+                    initializeScores();
+                    // Fallback to initial display
+                    renderLeaderboard(Object.keys(HOUSE_DATA).reduce((acc, name) => { acc[name] = 0; return acc; }, {}));
+                }
+            }, (error) => {
+                console.error("Error listening to Firestore:", error);
+                loadingIndicator.textContent = "Connection lost. Please check your network.";
+            });
+        }
+
+        /**
+         * Sets initial scores to zero if the document is empty.
+         */
+        async function initializeScores() {
+            const initialData = {};
+            Object.keys(HOUSE_DATA).forEach(name => {
+                initialData[name] = 0;
+            });
+            try {
+                await setDoc(houseScoresRef, initialData);
+                console.log("Initial scores set to zero.");
+            } catch (error) {
+                console.error("Error initializing scores:", error);
+            }
+        }
+
+        /**
+         * Renders the visually attractive leaderboard cards for the Student View.
+         * @param {Object} scores - The house scores from Firestore.
+         */
+        function renderLeaderboard(scores) {
+            // Convert to array and sort by score (descending)
+            const sortedHouses = Object.entries(scores)
+                .map(([name, score]) => ({ name, score, ...HOUSE_DATA[name] }))
+                .sort((a, b) => b.score - a.score);
+
+            pointsDisplay.innerHTML = '';
+            sortedHouses.forEach((house, index) => {
+                const rank = index + 1;
+                const previousScore = currentScores[house.name] !== undefined ? currentScores[house.name] : house.score;
+                const isUpdated = previousScore !== house.score;
+
+                const cardHtml = `
+                    <div id="card-${house.name}" class="house-card bg-white rounded-xl shadow-lg p-6 flex flex-col items-center text-center border-t-8 border-b-4 relative" style="border-top-color: ${house.color};">
+                        <div class="absolute top-0 right-0 p-3 text-white text-lg font-bold rounded-bl-xl bg-gray-800" style="background-color: ${house.color};">
+                            #${rank}
+                        </div>
+                        <img src="${house.imageUrl}" onerror="this.onerror=null;this.src='https://placehold.co/100x100/${house.placeholderColor.substring(1)}/ffffff?text=${house.name}';this.classList.add('p-2');" alt="${house.name} Mascot" class="h-24 w-24 mb-4 object-contain">
+                        <h3 class="text-2xl font-extrabold text-gray-800 mb-2 ${`text-${house.name.toLowerCase()}`}">${house.name}</h3>
+                        <div id="score-${house.name}" class="text-5xl font-black transition-all duration-300 score-display p-2 rounded-lg ${isUpdated ? 'score-updated' : ''}">
+                            ${house.score}
+                        </div>
+                        <p class="text-gray-500 text-sm mt-1">Points</p>
+                    </div>
+                `;
+                pointsDisplay.insertAdjacentHTML('beforeend', cardHtml);
+
+                // Re-apply animation class after rendering to trigger it on update
+                const scoreElement = document.getElementById(`score-${house.name}`);
+                if (scoreElement && isUpdated) {
+                    setTimeout(() => scoreElement.classList.remove('score-updated'), 600);
+                }
+            });
+        }
+
+        /**
+         * Renders the admin inputs with current scores.
+         * @param {Object} scores - The current house scores.
+         */
+        function renderAdminInputs(scores) {
+            if (!document.getElementById('admin-update-area').classList.contains('hidden')) {
+                updateScoresForm.innerHTML = ''; // Clear previous inputs
+
+                Object.keys(HOUSE_DATA).forEach(name => {
+                    const house = HOUSE_DATA[name];
+                    const currentScore = scores[name] !== undefined ? scores[name] : 0;
+
+                    const inputHtml = `
+                        <div class="flex items-center space-x-4 p-3 border rounded-lg bg-gray-50 border-gray-200">
+                            <span class="font-semibold w-1/3 text-lg" style="color: ${house.color};">${name}</span>
+                            <input
+                                type="number"
+                                id="score-input-${name}"
+                                name="${name}"
+                                value="${currentScore}"
+                                min="0"
+                                required
+                                class="w-1/3 p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-center"
+                            >
+                            <button
+                                type="button"
+                                data-house="${name}"
+                                class="update-single-btn w-1/3 px-3 py-2 text-sm bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition duration-150"
+                            >
+                                Update
+                            </button>
+                        </div>
+                    `;
+                    updateScoresForm.insertAdjacentHTML('beforeend', inputHtml);
+                });
+
+                // Attach event listener for single update buttons
+                document.querySelectorAll('.update-single-btn').forEach(button => {
+                    button.addEventListener('click', handleSingleUpdate);
+                });
+            }
+        }
+
+        /**
+         * Handles the click on a single house update button.
+         * @param {Event} e - The click event.
+         */
+        async function handleSingleUpdate(e) {
+            const houseName = e.target.getAttribute('data-house');
+            const scoreInput = document.getElementById(`score-input-${houseName}`);
+            const newScore = parseInt(scoreInput.value, 10);
+
+            if (isNaN(newScore) || newScore < 0) {
+                // Using console.error instead of alert
+                console.error("Invalid score entered.");
+                return;
+            }
+
+            e.target.disabled = true;
+            e.target.textContent = 'Updating...';
+
+            try {
+                // Create a temporary object with only the updated house score
+                const updateData = {};
+                updateData[houseName] = newScore;
+                
+                // Firestore automatically merges and updates the single leaderboard document
+                await setDoc(houseScoresRef, updateData, { merge: true });
+                
+                e.target.textContent = 'Updated!';
+                e.target.classList.remove('bg-green-500', 'hover:bg-green-600');
+                e.target.classList.add('bg-green-700');
+                setTimeout(() => {
+                    e.target.textContent = 'Update';
+                    e.target.classList.remove('bg-green-700');
+                    e.target.classList.add('bg-green-500', 'hover:bg-green-600');
+                    e.target.disabled = false;
+                }, 1000);
+            } catch (error) {
+                console.error("Error updating score:", error);
+                e.target.textContent = 'Error!';
+                setTimeout(() => {
+                    e.target.textContent = 'Update';
+                    e.target.disabled = false;
+                }, 1500);
+            }
+        }
+
+
+        // --- ADMIN LOGIN/LOGOUT LOGIC ---
+
+        toggleAdminBtn.addEventListener('click', () => {
+            // Toggle visibility of the admin panel
+            if (adminPanel.classList.contains('hidden')) {
+                adminPanel.classList.remove('hidden');
+                toggleAdminBtn.textContent = 'Hide Admin';
+            } else {
+                adminPanel.classList.add('hidden');
+                toggleAdminBtn.textContent = 'Admin Login';
+            }
+        });
+
+        adminLoginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const enteredPassword = adminPasswordInput.value;
+
+            if (enteredPassword === ADMIN_PASSWORD) {
+                adminLoginForm.classList.add('hidden');
+                adminUpdateArea.classList.remove('hidden');
+                loginError.classList.add('hidden');
+                // Render inputs with current scores immediately upon login
+                renderAdminInputs(currentScores);
+            } else {
+                loginError.textContent = "Invalid password. Try again.";
+                loginError.classList.remove('hidden');
+                adminPasswordInput.value = '';
+                adminPasswordInput.focus();
+            }
+        });
+
+        logoutBtn.addEventListener('click', () => {
+            adminUpdateArea.classList.add('hidden');
+            adminLoginForm.classList.remove('hidden');
+            adminPasswordInput.value = ''; // Clear password field
+            toggleAdminBtn.textContent = 'Admin Login';
+            adminPanel.classList.add('hidden');
+        });
+
+        // --- START APP ---
+        window.onload = initializeAndAuthenticate;
+    </script>
+</body>
+</html>
